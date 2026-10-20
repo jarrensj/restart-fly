@@ -66,6 +66,20 @@ A machine in the middle of something else, such as a deploy, is not touched:
 the run fails and asks you to try again in a minute. Only one restart runs at
 a time, and a second click waits for the first to finish.
 
+## Alerting your team on Discord (optional)
+
+Set the `DISCORD_WEBHOOK_URL` secret to a Discord channel webhook, and every run
+posts a card to that channel saying who restarted the app:
+
+- **Green, "my-app restarted by @user":** the app is back up. Shows the reason
+  and the version it's running.
+- **Red, "my-app restart by @user failed":** it didn't restart, or didn't come
+  back.
+
+Both cards link to the run. Without the secret the step is skipped, and a
+Discord problem never fails the restart. To set it up, see
+[SETUP.md → Discord alerts](./SETUP.md#discord-alerts).
+
 ## Running it locally
 
 `restart.sh` is the whole restart and only needs `curl`, `jq` and the token:

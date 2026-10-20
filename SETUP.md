@@ -45,17 +45,31 @@ secrets on the **Secrets** tab, variables on the **Variables** tab.
 | `FLY_APP` | variable | yes | The Fly app to restart. Step 2 sets it. |
 | `HEALTH_URL` | variable | no | A URL that must answer 2xx before a restart counts as done, e.g. `https://your-app.fly.dev/health`. Without it, the run waits for Fly's own health checks only. |
 | `PROCESS_GROUP` | variable | no | The process group to restart. Leave unset for `app`, the group `fly deploy` uses. |
-| `DISCORD_WEBHOOK_URL` | secret | no | A Discord channel webhook URL. When set, each run posts who restarted the app, why, and whether it worked. |
+| `DISCORD_WEBHOOK_URL` | secret | no | A Discord channel webhook URL. When set, each run posts who restarted the app, why, and whether it worked. See [Discord alerts](#discord-alerts). |
 
 From the CLI:
 
 ```bash
 gh variable set HEALTH_URL --body "https://your-app.fly.dev/health"
-gh secret set DISCORD_WEBHOOK_URL    # paste the URL when asked
 ```
 
-To make a Discord webhook: in the channel's settings, go to **Integrations →
-Webhooks → New Webhook**, then **Copy Webhook URL**.
+### Discord alerts
+
+To have every restart post who did it, and why, to a team channel:
+
+1. In Discord, open the channel's settings, go to **Integrations → Webhooks →
+   New Webhook**, give it a name, and click **Copy Webhook URL**.
+2. Save the URL as a secret, not a variable, since anyone who has it can post
+   to the channel:
+
+   ```bash
+   gh secret set DISCORD_WEBHOOK_URL    # paste the URL when asked
+   ```
+
+   Or on GitHub: **Settings → Secrets and variables → Actions → New repository
+   secret**, named `DISCORD_WEBHOOK_URL`.
+
+The next run posts a card. To turn alerts off, delete the secret.
 
 ## 4. Give people the button
 

@@ -19,12 +19,11 @@ case "$FLY_API_TOKEN" in
 esac
 machines_url="https://api.machines.dev/v1/apps/$FLY_APP/machines"
 
-# The restart call can hold the request open while the old process drains, so
-# the timeout has to outlast a long kill_timeout. On an error status, Fly's
-# message goes to stderr instead of being parsed as a response.
+# On an error status, Fly's message goes to stderr instead of being parsed as a
+# response.
 fly_api() {
   local out
-  if ! out="$(curl -sS --fail-with-body -m 300 -H "Authorization: $auth" "$@")"; then
+  if ! out="$(curl -sS --fail-with-body -m 30 -H "Authorization: $auth" "$@")"; then
     echo "Fly API: $out" >&2
     return 1
   fi
@@ -60,7 +59,21 @@ for id in $ids; do
       [ -z "$signal" ] || query="$query&signal=$signal"
       [ -z "$timeout" ] || query="$query&timeout=$timeout"
       echo "Restarting $id (${signal:-default signal}, ${timeout:-default timeout} to stop)"
-      fly_api -X POST "$machines_url/$id/restart?$query" >/dev/null
+      # Fly holds this request open until the machine has stopped. When that
+      # takes about a minute, as it does for a stuck app that uses its whole
+      # kill_timeout, Fly answers 408 but finishes the restart anyway. The wait
+      # below checks that it really happened, so a 408 isn't a failure.
+      out="$(curl -sS -m 300 -w '\n%{http_code}' -X POST -H "Authorization: $auth" \
+        "$machines_url/$id/restart?$query")"
+      code="${out##*$'\n'}"
+      case "$code" in
+        2??) ;;
+        408) echo "  Fly's API timed out waiting for $id to stop; waiting for the restart to finish" ;;
+        *)
+          echo "Fly API: $code ${out%$'\n'*}" >&2
+          exit 1
+          ;;
+      esac
       ;;
     stopped | suspended)
       # Fly gave up restarting a crashing process, or someone stopped it.

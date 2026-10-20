@@ -3,13 +3,17 @@
 # than restart, and saves it to this repo as the FLY_RESTART_TOKEN secret, along
 # with the FLY_APP variable. The token is never printed.
 #
-#   ./create-token.sh <fly-app>
+#   ./create-token.sh <fly-app> [environment]
+#
+# With an environment, the token is saved as that environment's secret instead
+# of a repo-wide one (see SETUP.md → Lock it down). FLY_APP stays repo-wide.
 #
 # Needs flyctl (logged in with access to the app), gh, curl and jq. Run it from
 # your copy of this repo, or set GH_REPO=owner/repo.
 set -euo pipefail
 
-app="${1:?usage: ./create-token.sh <fly-app>}"
+app="${1:?usage: ./create-token.sh <fly-app> [environment]}"
+environment="${2:-}"
 name="${TOKEN_NAME:-restart-fly (restart only, no exec)}"
 
 # Machines rC: machines can be read and controlled (start, stop, restart,
@@ -49,7 +53,7 @@ echo "list machines: $list (want 200), exec: $exec (want 403), secrets: $secrets
 [ "$exec" != 200 ] || fail "The token can run commands on machines."
 [ "$secrets" != 200 ] || fail "The token can read secrets."
 
-printf '%s' "$token" | gh secret set FLY_RESTART_TOKEN
+printf '%s' "$token" | gh secret set FLY_RESTART_TOKEN ${environment:+--env "$environment"}
 unset token
 gh variable set FLY_APP --body "$app"
-echo "Saved the FLY_RESTART_TOKEN secret and the FLY_APP variable."
+echo "Saved the FLY_RESTART_TOKEN secret${environment:+ in the $environment environment} and the FLY_APP variable."

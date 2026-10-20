@@ -71,16 +71,93 @@ To have every restart post who did it, and why, to a team channel:
 
 The next run posts a card. To turn alerts off, delete the secret.
 
-## 4. Give people the button
+## 4. Lock it down (recommended)
+
+Running a workflow needs write access, and write access also lets someone edit
+the workflow, on `main` or on a branch they push, and use its secrets directly.
+The Fly token still only controls machines, but they could read the Discord
+webhook URL and post anything to that channel, or change what the button does.
+These settings leave the button as the only thing write access gets them.
+
+On a private repo they need GitHub Pro or Team. They're free on public repos.
+
+1. **Add a CODEOWNERS file** naming yourself, so every change needs your
+   review:
+
+   ```bash
+   mkdir -p .github && echo "* @your-username" > .github/CODEOWNERS
+   git add .github/CODEOWNERS && git commit -m "Add CODEOWNERS" && git push
+   ```
+
+2. **Protect `main` with a ruleset**, so changes need a pull request approved
+   by a code owner and the branch can't be force-pushed or deleted. Go to
+   **Settings → Rules → Rulesets → New ruleset → New branch ruleset**:
+
+   - Name it `main` and set **Enforcement status** to **Active**.
+   - Under **Target branches**, click **Add target → Include default branch**.
+   - Under **Bypass list**, add **Repository admin** if you want to keep pushing
+     to `main` yourself.
+   - Leave **Restrict deletions** and **Block force pushes** on. Turn on
+     **Require a pull request before merging**, with 1 required approval and
+     **Require review from Code Owners**.
+
+   Or from the CLI:
+
+   ```bash
+   gh api -X POST repos/{owner}/{repo}/rulesets --input - <<'EOF'
+   {"name": "main", "target": "branch", "enforcement": "active",
+    "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+    "bypass_actors": [{"actor_type": "RepositoryRole", "actor_id": 5, "bypass_mode": "always"}],
+    "rules": [
+      {"type": "deletion"},
+      {"type": "non_fast_forward"},
+      {"type": "pull_request", "parameters": {
+        "required_approving_review_count": 1, "require_code_owner_review": true,
+        "dismiss_stale_reviews_on_push": false, "require_last_push_approval": false,
+        "required_review_thread_resolution": false}}
+    ]}
+   EOF
+   ```
+
+   `actor_id` 5 is the Repository admin role. Drop `bypass_actors` if nobody
+   should skip the review.
+
+3. **Create a `restart` environment that only `main` can use.** The workflow
+   already runs in it. Go to **Settings → Environments → New environment**,
+   name it `restart`, then under **Deployment branches and tags** choose
+   **Selected branches and tags** and add `main`. Or:
+
+   ```bash
+   gh api -X PUT repos/{owner}/{repo}/environments/restart --input - <<'EOF'
+   {"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
+   EOF
+   gh api -X POST repos/{owner}/{repo}/environments/restart/deployment-branch-policies \
+     -f name=main -f type=branch
+   ```
+
+   Naming `main` works whichever way you protect it.
+
+4. **Move the secrets into the environment**, then delete the repo-wide copies
+   and revoke the old token (see [Rotating or revoking it](#rotating-or-revoking-it)):
+
+   ```bash
+   ./create-token.sh <your-fly-app> restart
+   gh secret set DISCORD_WEBHOOK_URL --env restart    # if you use Discord
+   gh secret delete FLY_RESTART_TOKEN
+   gh secret delete DISCORD_WEBHOOK_URL
+   ```
+
+After this, a run from any branch other than `main` can't read the secrets, and
+`main` can't change without your approval. Each run also shows up under the
+repo's **Deployments**, as a deployment to `restart`.
+
+## 5. Give people the button
 
 Add them under **Settings → Collaborators** (on an organization repo, give them
 the **Write** role). Running a workflow needs write access, and that's all they
 need: a GitHub account and an accepted invite. No Fly account or CLI.
 
-Write access also lets them edit the workflow and use the token directly. That
-is why the token can only restart.
-
-## 5. Try it
+## 6. Try it
 
 Run it once at a quiet time: **Actions → Restart → Run workflow**. A good run
 ends with the summary line `<machine> is back up, running <version>`, and posts
@@ -103,7 +180,10 @@ inside the free allowance.
 - **`Machines` `rC`:** machines can be read (`r`) and controlled (`C`: start,
   stop, restart, signal) but not changed, created or deleted. The `""` key means
   every machine in the app. Anything that isn't a machine, such as secrets,
-  logs, deploys or SSH, is refused.
+  logs, deploys or SSH, is refused. Fly has no separate permission for restart
+  alone, so whoever holds the token can also stop a machine. If your
+  `fly.toml` has `auto_start_machines = true`, Fly starts it again on the next
+  request.
 - **`IfPresent` with an empty `Commands` list:** `rC` alone still allows `exec`,
   which would let someone read every secret from the app's environment. This
   caveat applies only to exec requests and allows no commands, so exec is
@@ -111,7 +191,7 @@ inside the free allowance.
 
 ### Rotating or revoking it
 
-To rotate, run `./create-token.sh <your-fly-app>` again, then revoke the old
-token. To revoke, find it by name (`restart-fly (restart only, no exec)` unless
+To rotate, run `./create-token.sh <your-fly-app>` again (add `restart` if your
+secrets live in the environment), then revoke the old token. To revoke, find it by name (`restart-fly (restart only, no exec)` unless
 you set `TOKEN_NAME`) in `fly tokens list -a <your-fly-app>`, then run
 `fly tokens revoke <id>`.

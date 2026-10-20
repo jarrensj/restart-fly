@@ -6,10 +6,12 @@ people who shouldn't have full Fly access.
 - **Who can press it:** anyone with write access to your copy of this repo.
   Add or remove people under **Settings → Collaborators**. They don't need a
   Fly account.
-- **What the button can do:** restart the app's machines, and nothing else.
-  The Fly token it uses can't deploy, read secrets or logs, SSH in, or run
-  commands, so someone who edits the workflow to misuse it still can only
-  restart.
+- **What the button can do:** restart the app's machines. The Fly token it
+  uses can start, stop and restart machines, but can't deploy, read secrets or
+  logs, SSH in, or run commands. With the
+  [lock-down settings](./SETUP.md#4-lock-it-down-recommended), people with
+  write access can't change the workflow or read its secrets either, so the
+  button is all they get.
 - **Who did it:** every run records who started it and why, and can post a card
   to Discord.
 

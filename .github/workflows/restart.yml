@@ -24,6 +24,10 @@ jobs:
   restart:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Keep the secrets in this environment, limited to protected branches, and
+    # a workflow edited on another branch can't read them. Repo-level secrets
+    # still work if you skip that. See SETUP.md → Lock it down.
+    environment: restart
     steps:
       - uses: actions/checkout@v4
 

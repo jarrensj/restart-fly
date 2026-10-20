@@ -1,0 +1,80 @@
+name: Restart
+
+# Restarts the Fly app named by the FLY_APP variable: Actions → Restart → Run
+# workflow. Anyone with write access to this repo can run it. Setup is in
+# README.md.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Why you're restarting (shown in the run summary and on Discord)
+        required: false
+        type: string
+
+# One restart at a time. A second click waits for the running one instead of
+# cutting its drain short.
+concurrency:
+  group: restart
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restart
+        id: restart
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_RESTART_TOKEN }}
+          FLY_APP: ${{ vars.FLY_APP }}
+          HEALTH_URL: ${{ vars.HEALTH_URL }}
+          PROCESS_GROUP: ${{ vars.PROCESS_GROUP }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          # Run logs are public on a public repo, so keep the app out of them.
+          [ -z "$FLY_APP" ] || echo "::add-mask::$FLY_APP"
+          [ -z "$HEALTH_URL" ] || echo "::add-mask::$HEALTH_URL"
+          echo "Requested by @$GITHUB_ACTOR${REASON:+: $REASON}" >>"$GITHUB_STEP_SUMMARY"
+          ./restart.sh
+
+      # Says who restarted and why. Needs the DISCORD_WEBHOOK_URL secret;
+      # without it this step no-ops. A Discord failure doesn't fail the run.
+      - name: Post to Discord
+        if: always()
+        continue-on-error: true
+        # The reason reaches the script only via env and jq --arg; interpolating
+        # `${{ }}` straight into `run` would let it inject shell.
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          FLY_APP: ${{ vars.FLY_APP }}
+          OUTCOME: ${{ steps.restart.outcome }}
+          REASON: ${{ inputs.reason }}
+          VERSION: ${{ steps.restart.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL is not set, skipping"
+            exit 0
+          fi
+          if [ "$OUTCOME" = success ]; then
+            title="$FLY_APP restarted by $GITHUB_ACTOR"
+            color=5763719
+          else
+            title="$FLY_APP restart by $GITHUB_ACTOR failed"
+            color=15548997
+          fi
+          jq -n --arg title "$title" --arg reason "$REASON" --arg version "$VERSION" \
+                --arg run "$RUN_URL" --argjson color "$color" \
+            '{allowed_mentions: {parse: []},
+              embeds: [
+                {title: $title, url: $run, color: $color}
+                + (if $reason == "" then {} else {description: $reason[0:1000]} end)
+                + (if $version == "" then {} else
+                    {fields: [{name: "Running", value: "`\($version)`", inline: true}]} end)
+              ]}' \
+            | curl -fsS -m 15 --retry 2 -H 'content-type: application/json' -d @- "$WEBHOOK_URL"
